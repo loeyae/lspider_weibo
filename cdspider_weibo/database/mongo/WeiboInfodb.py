@@ -9,7 +9,7 @@
 :version: SVN: $Id: Resultdb.py 2338 2018-07-08 05:58:24Z zhangyi $
 """
 import time
-from cdspider.database.base import WeiboInfoDB as BaseWeiboInfoDB
+from cdspider_weibo.database.base import WeiboInfoDB as BaseWeiboInfoDB
 from cdspider.database.mongo.Mongo import Mongo, SplitTableMixin
 
 class WeiboInfoDB(Mongo, BaseWeiboInfoDB, SplitTableMixin):

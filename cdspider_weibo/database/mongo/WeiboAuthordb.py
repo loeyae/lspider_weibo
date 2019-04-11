@@ -9,8 +9,7 @@
 :version: SVN: $Id: WeiboAuthordb.py 2116 2018-07-04 03:56:12Z zhangyi $
 """
 import time
-import pymongo
-from cdspider.database.base import WeiboAuthorDB as BaseWeiboAuthorDB
+from cdspider_weibo.database.base import WeiboAuthorDB as BaseWeiboAuthorDB
 from cdspider.database.mongo.Mongo import Mongo
 
 class WeiboAuthorDB(Mongo, BaseWeiboAuthorDB):
