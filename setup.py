@@ -18,6 +18,7 @@ setup(
     url="https://github.com/loeyae/lspider_weibo.git",
     install_requires = [
         'cdspider>=0.1',
+        'cdspider_wemedia>=0.1',
     ],
     packages = find_packages(),
 
@@ -25,10 +26,6 @@ setup(
         'cdspider.handler': [
             'weibo=cdspider_weibo.handler:WeiboHandler',
             'weibo-search=cdspider_weibo.handler:WeiboSearchHandler',
-        ],
-        'cdspider.dao.mongo': [
-            'WeiboAuthorDB=cdspider_weibo.database.mongo:WeiboAuthorDB',
-            'WeiboInfoDB=cdspider_weibo.database.mongo:WeiboInfoDB',
         ]
     }
 )

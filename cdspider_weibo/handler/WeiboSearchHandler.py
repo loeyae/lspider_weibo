@@ -8,115 +8,54 @@
 """
 import time
 from cdspider.handler import GeneralSearchHandler
-from cdspider_extra.cdspider_extra.handler.traite import NewAttachmentTask
 from cdspider.libs import utils
 from cdspider.libs.constants import *
+from cdspider.database.base import *
 from cdspider.parser.lib import TimeParser
 
-class WeiboSearchHandler(GeneralSearchHandler, NewAttachmentTask):
+class WeiboSearchHandler(GeneralSearchHandler):
     """
     weibo search handler
     :property task 爬虫任务信息 {"mode": "weibo-search", "uuid": SpiderTask.list uuid}
                    当测试该handler，数据应为 {"mode": "weibo-search", "keyword": 关键词规则, "authorListRule": 列表规则，参考列表规则}
     """
 
-    def run_result(self, save):
+    def build_result_info(self, **kwargs):
         """
-        爬虫结果处理
-        :param save 保存的上下文信息
-        :input self.response {"parsed": 解析结果, "final_url": 请求的url}
-        """
-        self.task['mediaType'] = MEDIA_TYPE_WEIBO
-        self.crawl_info['crawl_urls'][str(self.page)] = self.response['final_url']
-        self.crawl_info['crawl_count']['page'] += 1
-        if self.response['parsed']:
-            ctime = self.crawl_id
-            new_count = self.crawl_info['crawl_count']['new_count']
-            typeinfo = utils.typeinfo(self.response['final_url'])
-            for each in self.response['parsed']:
-                if not each['url']:
-                    continue
-                self.crawl_info['crawl_count']['total'] += 1
-                if self.testing_mode:
-                    '''
-                    testing_mode打开时，数据不入库
-                    '''
-                    inserted, unid = (True, {"acid": "test_mode", "ctime": ctime})
-                    self.debug("%s test mode: %s" % (self.__class__.__name__, unid))
-                else:
-                    #生成唯一ID, 并判断是否已存在
-                    inserted, unid = self.db['UniqueDB'].insert(self.get_unique_setting(each['url'], {}), ctime)
-                    self.debug("%s on_result unique: %s @ %s" % (self.__class__.__name__, str(inserted), str(unid)))
-                if inserted:
-                    result = self.build_weibo_info(result=each, final_url=self.response['final_url'], **unid)
-                    self.debug("%s result: %s" % (self.__class__.__name__, result))
-                    if not self.testing_mode:
-                        '''
-                        testing_mode打开时，数据不入库
-                        '''
-                        result_id = self.db['WeiboInfoDB'].insert(result)
-                        if not result_id:
-                            raise CDSpiderDBError("Result insert failed")
-                        self.build_sync_task(result_id, 'WeiboInfoDB')
-                    self.result2attach(result['crawlinfo'], save, result_id, url=each['url'], **typeinfo)
-                    self.db['WeiboInfoDB'].update(result_id, {"crawlinfo": result['crawlinfo']})
-                    self.crawl_info['crawl_count']['new_count'] += 1
-                else:
-                    self.crawl_info['crawl_count']['repeat_count'] += 1
-            if self.crawl_info['crawl_count']['new_count'] - new_count == 0:
-                self.crawl_info['crawl_count']['repeat_page'] += 1
-                self.on_repetition(save)
-
-    def build_weibo_info(self, **kwargs):
-        """
-        构造评论数据
+        构造文章数据
+        :param result: 解析到的文章信息 {"title": 标题, "author": 作者, "pubtime": 发布时间, "content": 内容}
+        :param final_url: 请求的url
+        :param typeinfo: 域名信息 {'domain': 一级域名, 'subdomain': 子域名}
+        :param crawlinfo: 爬虫信息
+        :param unid: 文章唯一索引
+        :param ctime: 抓取时间
+        :param status: 状态
         """
         now = int(time.time())
-        result = kwargs.pop('result')
-        #格式化发布时间
+        result = kwargs.get('result', {})
         pubtime = TimeParser.timeformat(str(result.pop('pubtime', '')))
         if pubtime and pubtime > now:
             pubtime = now
-        #爬虫信息记录
-        result['pubtime'] = pubtime
-        result['crawlinfo'] = {
-            'listMode': self.task['mode'],
-            'pid': self.task['pid'],                        # project id
-            'sid': self.task['sid'],                        # site id
-            'tid': self.task['tid'],                        # task id
-            'uid': self.task['uid'],                        # url id
-            'kid': self.task['kid'],                        # url id
-            'listRle': self.process['uuid'],                # authorListRule id
-            'list_url': self.task['url'],            # 列表url
+        r = {
+            "status": kwargs.get('status', ArticlesDB.STATUS_INIT),
+            'url': kwargs['final_url'],
+            'domain': kwargs.get("typeinfo", {}).get('domain', None),          # 站点域名
+            'subdomain': kwargs.get("typeinfo", {}).get('subdomain', None),    # 站点域名
+            'title': "%s的微博",                                # 标题
+            'mediaType': self.process.get('mediaType', self.task['task'].get('mediaType', MEDIA_TYPE_OTHER)),
+            'author': result.pop('author', None),
+            'pubtime': pubtime,                                                # 发布时间
+            'channel': result.pop('channel', None),                            # 频道信息
+            'result': result,
+            'crawlinfo': kwargs.get('crawlinfo'),
+            'acid': kwargs['unid'],                                            # unique str
+            'ctime': kwargs.get('ctime', self.crawl_id),
         }
-        result['mediaType'] = MEDIA_TYPE_WEIBO
-        result['acid'] = kwargs.pop('unid')
-        result['ctime'] = kwargs.pop('ctime')
-        return result
+        return r
 
-    def url_prepare(self, url):
-        return url
-
-    def finish(self, save):
+    def build_item_task(self, rid, mode, save):
         """
-        记录抓取日志
+        生成详情抓取任务并入队
         """
-        super(WeiboSearchHandler, self).finish(save)
-        crawlinfo = self.task.get('crawlinfo', {}) or {}
-        self.crawl_info['crawl_end'] = int(time.time())
-        crawlinfo[str(self.crawl_id)] = self.crawl_info
-        crawlinfo_sorted = [(k, crawlinfo[k]) for k in sorted(crawlinfo.keys())]
-        if len(crawlinfo_sorted) > self.CRAWL_INFO_LIMIT_COUNT:
-            del crawlinfo_sorted[0]
-        s = self.task.get("save")
-        if not s:
-            s = {}
-        s.update(save)
-        self.db['SpiderTaskDB'].update(self.task['uuid'], self.task['mode'], {"crawltime": self.crawl_id, "crawlinfo": dict(crawlinfo_sorted), "save": s})
-
-    def build_sync_task(self, rid, db):
-        """
-        生成同步任务并入队
-        """
-        message = {'rid': rid, 'db': db}
-        self.queue['article2kafka'].put_nowait(message)
+        typeinfo = utils.typeinfo(self.response['final_url'])
+        self.extension("result_handle", {"save": save, **typeinfo}, ns="item_handler")
